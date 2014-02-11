@@ -17,21 +17,33 @@
 #error "Variante non défini !!"
 #endif
 
+// ########### //
+// ## Liste ## //
+// ########### //
+
+typedef struct process_cell {
+	int pid;
+	char** argv;
+	struct process_cell* next;
+} ProcessCell;
+
 /*
- * Calcule la taille d'un tableau de chaines.
+ * Ajoute une cellule en tête de la liste.
  */
-static size_t sizeOfArray(char** array) {
-	if (array == NULL) {
-		return 0;
-	}
-
-	size_t count = 0;
-	while (array[count] != NULL) {
-		count++;
-	}
-
-	return count;
+void add(ProcessCell** list, int pid, char** argv) {
+	// TODO
 }
+
+/*
+ * Imprime la liste en supprimant les processus morts.
+ */
+void print(ProcessCell** list) {
+	// TODO
+}
+
+// ########## //
+// ## Main ## //
+// ########## //
 
 int main() {
 	printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
@@ -54,6 +66,10 @@ int main() {
 			printf("error: %s\n", l->err);
 			continue;
 		}
+
+		///////////
+		// DEBUG //
+		///////////
 
 		if (l->in) {
 			printf("in: %s\n", l->in);
@@ -79,23 +95,31 @@ int main() {
 
 		printf("\n");
 
-		int res = fork();
+		///////////////
+		// FIN DEBUG //
+		///////////////
 
+		// Fork
+		int res = fork();
 		if (res == -1) {
-			perror("Fork failed: ");
+			perror("fork failed: ");
 			exit(-1);
-		} else if (res == 0) {
-			char* argc = l->seq[0][0];
-			int nbArgs = sizeOfArray(l->seq[0]) - 1;
-			char* argv[nbArgs];
-			for (i = 0; i < nbArgs; i++) {
-				argv[i] = l->seq[0][i + 1];
-			}
-			execvp(argc, argv);
-		} else {
-			waitpid((pid_t)res, NULL, 0);
+		} else if (res == 0) { // Dans le fils
+			// Appel d'execvp
+			execvp(l->seq[0][0], l->seq[0]);
+
+			// Code appelé uniquement si execvp retourne
+			// == si execvp échoue
+			perror("execvp failed: ");
+			exit(-1);
 		}
 
+		// Dans le père
+		if (!l->bg) {
+			waitpid((pid_t)res, NULL, 0);
+		} else {
+			
+		}
 		printf("\n");
 	}
 }
