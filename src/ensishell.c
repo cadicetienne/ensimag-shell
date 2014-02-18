@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "variante.h"
 #include "readcmd.h"
@@ -27,18 +28,75 @@ typedef struct process_cell {
 	struct process_cell* next;
 } ProcessCell;
 
+void printStringArray(char** stringArray, char* separator) {
+	if (stringArray[0] == NULL) {
+		printf("Empty array");
+	} else {
+		printf("%s", stringArray[0]);
+		int i = 1;
+		while (stringArray[i] != NULL) {
+			printf("%s%s", separator, stringArray[i]);
+			i++;
+		}
+	}
+}
+
+char** copyStringArray(char** stringArray) {
+	int nb = 0;
+	while (stringArray[nb] != NULL) {
+		nb++;
+	}
+	char** res = malloc((nb + 1) * sizeof(char*));
+	int i = 0;
+	while (stringArray[i] != NULL) {
+		res[i] = malloc(sizeof(char) * strlen(stringArray[i]));
+		strcpy(res[i], stringArray[i]);
+		i++;
+	}
+	res[i] = NULL;
+	return res;
+}
+
 /*
  * Ajoute une cellule en tête de la liste.
  */
 void add(ProcessCell** list, int pid, char** argv) {
-	// TODO
+	ProcessCell* newCell = malloc(sizeof(ProcessCell));
+	newCell->pid = pid;
+	newCell->argv = argv;
+	newCell->next = NULL;
+	if (*list == NULL) {
+		*list = newCell;
+	} else {
+		newCell->next = *list;
+		*list = newCell;
+	}
 }
 
 /*
  * Imprime la liste en supprimant les processus morts.
  */
 void print(ProcessCell** list) {
-	// TODO
+	if (*list == NULL) {
+		printf("Aucun job en cours\n");
+		return;
+	}
+	ProcessCell* cell = *list;
+	printf("  PID  | Status | Command\n");
+	printf("-------+--------+------------------------------------------\n");
+	do {
+		int res = waitpid(cell->pid, NULL, WNOHANG);
+		printf("  %d | ", cell->pid);
+		if (res == 0) {
+			printf("  OK   | ");
+		} else {
+			printf(" DEAD  | ");
+			// TODO Supprimer!
+		}
+		printStringArray(cell->argv, " ");
+		printf("\n-------+--------+------------------------------------------\n");
+		cell = cell->next;
+	} while (cell != NULL);
 }
 
 // ########## //
@@ -48,9 +106,11 @@ void print(ProcessCell** list) {
 int main() {
 	printf("Variante %d: %s\n", VARIANTE, VARIANTE_STRING);
 
+	ProcessCell** jobs = malloc(sizeof(ProcessCell*));
+
 	while (1) {
 		struct cmdline *l;
-		int i, j;
+		int i;
 		char *prompt = "ensishell>";
 
 		l = readcmd(prompt);
@@ -87,9 +147,7 @@ int main() {
 		for (i = 0; l->seq[i] != 0; i++) {
 			char** cmd = l->seq[i];
 			printf("seq[%d]: ", i);
-			for (j = 0; cmd[j] != 0; j++) {
-				printf("'%s' ", cmd[j]);
-			}
+			printStringArray(cmd, " ");
 			printf("\n");
 		}
 
@@ -98,6 +156,12 @@ int main() {
 		///////////////
 		// FIN DEBUG //
 		///////////////
+
+		// Jobs command
+		if (strcmp(l->seq[0][0], "jobs") == 0) {
+			print(jobs);
+			continue;
+		}
 
 		// Fork
 		int res = fork();
@@ -118,7 +182,7 @@ int main() {
 		if (!l->bg) {
 			waitpid((pid_t)res, NULL, 0);
 		} else {
-			
+			add(jobs, res, copyStringArray(l->seq[0]));
 		}
 		printf("\n");
 	}
