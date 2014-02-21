@@ -81,21 +81,38 @@ void print(ProcessCell** list) {
 		printf("Aucun job en cours\n");
 		return;
 	}
+	ProcessCell* prev = NULL;
 	ProcessCell* cell = *list;
 	printf("  PID  | Status | Command\n");
 	printf("-------+--------+------------------------------------------\n");
 	do {
+		int delete = 0;
 		int res = waitpid(cell->pid, NULL, WNOHANG);
 		printf("  %d | ", cell->pid);
 		if (res == 0) {
 			printf("  OK   | ");
 		} else {
+			delete = 1;
 			printf(" DEAD  | ");
-			// TODO Supprimer!
 		}
 		printStringArray(cell->argv, " ");
 		printf("\n-------+--------+------------------------------------------\n");
-		cell = cell->next;
+		if (delete) {
+			if (prev == NULL) {
+				*list = cell->next;
+				free(cell->argv);
+				free(cell);
+				cell = *list;
+			} else {
+				prev->next = cell->next;
+				free(cell->argv);
+				free(cell);
+				cell = prev->next;
+			}
+		} else {
+			prev = cell;
+			cell = cell->next;
+		}
 	} while (cell != NULL);
 }
 
@@ -124,6 +141,11 @@ int main() {
 		if (l->err) {
 			// Erreur de syntaxe, commande suivante
 			printf("error: %s\n", l->err);
+			continue;
+		}
+
+		if (!l->seq[0]) {
+			// Aucune commande entrée
 			continue;
 		}
 
