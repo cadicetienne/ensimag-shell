@@ -32,12 +32,12 @@ typedef struct process_cell {
  * Imprime un tableau de chaines de caractères
  */
 void printStringArray(char** stringArray, char* separator) {
-	if (!stringArray[0]) {
+	if (stringArray[0] == NULL) {
 		printf("Empty array");
 	} else {
 		printf("%s", stringArray[0]);
 		int i = 1;
-		while (stringArray[i]) {
+		while (stringArray[i] != NULL) {
 			printf("%s%s", separator, stringArray[i]);
 			i++;
 		}
@@ -45,34 +45,21 @@ void printStringArray(char** stringArray, char* separator) {
 }
 
 /*
- * Copie l'ensemble des commandes comme un seul tableau de chaines
+ * Duplique une chaine de caractères
  */
-char** copyCommandsAsStringArray(char*** commands) {
-	int nbStrings = 0, i = 0, j;
-	while (commands[i]) {
-		j = 0;
-		while (commands[i][j]) {
-			j++;
-		}
-		i++;
-		nbStrings += j + 1;
+char** copyStringArray(char** stringArray) {
+	int nb = 0;
+	while (stringArray[nb] != NULL) {
+		nb++;
 	}
-	char** res = malloc((nbStrings) * sizeof(char*));
-	int cmdIndex = 0, cmdPartIndex;
-	i = 0;
-	while (commands[cmdIndex]) {
-		cmdPartIndex = 0;
-		while (commands[cmdIndex][cmdPartIndex]) {
-			res[i] = malloc(sizeof(char) * strlen(commands[cmdIndex][cmdPartIndex]));
-			strcpy(res[i], commands[cmdIndex][cmdPartIndex]);
-			cmdPartIndex++;
-			i++;
-		}
-		res[i] = "|";
-		cmdIndex++;
+	char** res = malloc((nb + 1) * sizeof(char*));
+	int i = 0;
+	while (stringArray[i] != NULL) {
+		res[i] = malloc(sizeof(char) * strlen(stringArray[i]));
+		strcpy(res[i], stringArray[i]);
 		i++;
 	}
-	res[--i] = NULL;
+	res[i] = NULL;
 	return res;
 }
 
@@ -84,7 +71,7 @@ void add(ProcessCell** list, int pid, char** argv) {
 	newCell->pid = pid;
 	newCell->argv = argv;
 	newCell->next = NULL;
-	if (!*list) {
+	if (*list == NULL) {
 		*list = newCell;
 	} else {
 		newCell->next = *list;
@@ -96,7 +83,7 @@ void add(ProcessCell** list, int pid, char** argv) {
  * Imprime la liste des jobs en supprimant les jobs morts.
  */
 void print(ProcessCell** list) {
-	if (!*list) {
+	if (*list == NULL) {
 		printf("Aucun job en cours\n");
 		return;
 	}
@@ -117,7 +104,7 @@ void print(ProcessCell** list) {
 		printStringArray(cell->argv, " ");
 		printf("\n-------+--------+------------------------------------------\n");
 		if (delete) {
-			if (!prev) {
+			if (prev == NULL) {
 				*list = cell->next;
 				free(cell->argv);
 				free(cell);
@@ -132,7 +119,7 @@ void print(ProcessCell** list) {
 			prev = cell;
 			cell = cell->next;
 		}
-	} while (cell);
+	} while (cell != NULL);
 }
 
 // ########## //
@@ -147,7 +134,7 @@ int main() {
 	while (1) {
 		struct cmdline *l;
 		int i;
-		char *prompt = "\nensishell>";
+		char *prompt = "ensishell>";
 
 		l = readcmd(prompt);
 
@@ -185,7 +172,7 @@ int main() {
 		}
 
 		// Affiche chaque commande
-		for (i = 0; l->seq[i]; i++) {
+		for (i = 0; l->seq[i] != 0; i++) {
 			char** cmd = l->seq[i];
 			printf("seq[%d]: ", i);
 			printStringArray(cmd, " ");
@@ -198,69 +185,119 @@ int main() {
 		// FIN DEBUG //
 		///////////////
 
-		// Commande jobs
+		// Jobs command
 		if (strcmp(l->seq[0][0], "jobs") == 0) {
 			print(jobs);
 			continue;
 		}
 
-		int pipefd[2];
-		int inFd = 0;
-		int outFd = 0;
-		int res;
-
-		if (l->in) {
+		// Input & Output
+		int stdinFd = dup(0);
+		int stdoutFd = dup(1);
+		int inFd = stdinFd;
+		int outFd = stdoutFd;
+		if (l->in != NULL) {
 			inFd = open(l->in, O_RDONLY);
 			if (inFd == -1) {
-				printf("Failed to open file '%s' in read mode\n", l->in);
+				printf("Failed to open file in read mode: %s\n", l->in);
 				continue;
 			}
+			dup2(inFd, 0);
 		}
-
-		if (l->out) {
+		if (l->out != NULL) {
 			outFd = open(l->out, O_WRONLY|O_CREAT, S_IRWXU);
 			if (outFd == -1) {
-				printf("Failed to open/create file '%s' in write mode\n", l->out);
+				printf("Failed to open/create file in write mode: %s\n", l->out);
 				continue;
 			}
+			dup2(outFd, 1);
 		}
 
-		for (i = 0; l->seq[i]; i++) {
-			if (pipe(pipefd) == -1) {
-				perror("pipe failed");
-				exit(EXIT_FAILURE);
-			}
-			res = fork();
-			if (res == -1) {
-				perror("fork failed");
-				exit(EXIT_FAILURE);
-			} else if (res == 0) {
-				// Branchement de l'entrée précédente (éventuellment
-				// l'entrée standard) sur l'entrée du processus
-				dup2(inFd, 0);
-				if (l->seq[i + 1]) {
-					// Pas la dernière commande, on branche la sortie
-					// pour la récupérer dans l'entrée suivante
-					dup2(pipefd[1], 1);
-				} else if (outFd) {
-					// Dernière commande, on branche sur la sortie out
-					dup2(outFd, 1);
-				}
+		int pipefd[2] = {inFd, outFd};
+		if (pipe(pipefd) == -1) {
+			perror("pipe failed");
+			exit(EXIT_FAILURE);
+		}
+
+		int res;
+		for (i = 0; l->seq[i] != NULL; i++) {
+			if (l->seq[i + 1] == NULL) {
+				// Dans la dernière commande
+				dup2(pipefd[0], 0);
 				close(pipefd[0]);
-				execvp(l->seq[i][0], l->seq[i]);
-				perror("execvp failed");
-				exit(EXIT_FAILURE);
+				dup2(outFd, 1);
+				close(outFd);
 			} else {
-				inFd = pipefd[0];
-				close(pipefd[1]);
+				res = fork();
+				if (res == -1) {
+					perror("fork failed");
+					exit(EXIT_FAILURE);
+				} else if (res == 0) {
+
+				} else if (i == 0) {
+					break;
+				} else {
+					// Dans la commande i
+				}
+			}
+			execvp(l->seq[i][0], l->seq[i]);
+		}
+/*
+		// Fork
+		int pipefd[2];
+		if (pipe(pipefd) == -1) {
+			perror("pipe failed: ");
+			exit(EXIT_FAILURE);
+		}
+		int res = fork();
+		if (res == -1) {
+			perror("fork failed: ");
+			exit(EXIT_FAILURE);
+		} else if (res == 0) { // Dans le fils
+			dup2(pipefd[1], 1);
+			// Pipe
+			close(pipefd[0]); close(pipefd[1]);
+
+			// Appel d'execvp
+			execvp(l->seq[0][0], l->seq[0]);
+
+			// Code appelé uniquement si execvp retourne
+			// == si execvp échoue
+			perror("execvp failed: ");
+			exit(EXIT_FAILURE);
+		}
+
+		int res2 = -42;
+		if (l->seq[1] != NULL) {
+			res2 = fork();
+			if (res2 == 0) {
+				dup2(pipefd[0], 0);
+				close(pipefd[1]); close(pipefd[0]);
+				execvp(l->seq[1][0], l->seq[1]);
+				perror("execvp failed: ");
+				exit(EXIT_FAILURE);
 			}
 		}
 
-		if (!l->bg) {
-			waitpid(res, NULL, 0);
-		} else {
-			add(jobs, res, copyCommandsAsStringArray(l->seq));
+		close(pipefd[0]); close(pipefd[1]);
+		if (inFd != stdinFd) {
+			dup2(stdinFd, 0);
+			close(stdinFd);
+			close(inFd);
 		}
+		if (outFd != stdoutFd) {
+			dup2(stdoutFd, 1);
+			close(stdoutFd);
+			close(outFd);
+		}
+*/
+		// Dans le père
+		if (!l->bg) {
+			waitpid((pid_t)res, NULL, 0);
+		} else {
+			add(jobs, res, copyStringArray(l->seq[0]));
+		}
+		printf("\n");
 	}
 }
 
