@@ -32,12 +32,12 @@ typedef struct process_cell {
  * Imprime un tableau de chaines de caractères
  */
 void printStringArray(char** stringArray, char* separator) {
-	if (stringArray[0] == NULL) {
+	if (!stringArray[0]) {
 		printf("Empty array");
 	} else {
 		printf("%s", stringArray[0]);
 		int i = 1;
-		while (stringArray[i] != NULL) {
+		while (stringArray[i]) {
 			printf("%s%s", separator, stringArray[i]);
 			i++;
 		}
@@ -45,21 +45,34 @@ void printStringArray(char** stringArray, char* separator) {
 }
 
 /*
- * Duplique une chaine de caractères
+ * Copie l'ensemble des commandes comme un seul tableau de chaines
  */
-char** copyStringArray(char** stringArray) {
-	int nb = 0;
-	while (stringArray[nb] != NULL) {
-		nb++;
+char** copyCommandsAsStringArray(char*** commands) {
+	int nbStrings = 0, i = 0, j;
+	while (commands[i]) {
+		j = 0;
+		while (commands[i][j]) {
+			j++;
+		}
+		i++;
+		nbStrings += j + 1;
 	}
-	char** res = malloc((nb + 1) * sizeof(char*));
-	int i = 0;
-	while (stringArray[i] != NULL) {
-		res[i] = malloc(sizeof(char) * strlen(stringArray[i]));
-		strcpy(res[i], stringArray[i]);
+	char** res = malloc((nbStrings) * sizeof(char*));
+	int cmdIndex = 0, cmdPartIndex;
+	i = 0;
+	while (commands[cmdIndex]) {
+		cmdPartIndex = 0;
+		while (commands[cmdIndex][cmdPartIndex]) {
+			res[i] = malloc(sizeof(char) * strlen(commands[cmdIndex][cmdPartIndex]));
+			strcpy(res[i], commands[cmdIndex][cmdPartIndex]);
+			cmdPartIndex++;
+			i++;
+		}
+		res[i] = "|";
+		cmdIndex++;
 		i++;
 	}
-	res[i] = NULL;
+	res[--i] = NULL;
 	return res;
 }
 
@@ -71,7 +84,7 @@ void add(ProcessCell** list, int pid, char** argv) {
 	newCell->pid = pid;
 	newCell->argv = argv;
 	newCell->next = NULL;
-	if (*list == NULL) {
+	if (!*list) {
 		*list = newCell;
 	} else {
 		newCell->next = *list;
@@ -83,7 +96,7 @@ void add(ProcessCell** list, int pid, char** argv) {
  * Imprime la liste des jobs en supprimant les jobs morts.
  */
 void print(ProcessCell** list) {
-	if (*list == NULL) {
+	if (!*list) {
 		printf("Aucun job en cours\n");
 		return;
 	}
@@ -104,7 +117,7 @@ void print(ProcessCell** list) {
 		printStringArray(cell->argv, " ");
 		printf("\n-------+--------+------------------------------------------\n");
 		if (delete) {
-			if (prev == NULL) {
+			if (!prev) {
 				*list = cell->next;
 				free(cell->argv);
 				free(cell);
@@ -119,7 +132,7 @@ void print(ProcessCell** list) {
 			prev = cell;
 			cell = cell->next;
 		}
-	} while (cell != NULL);
+	} while (cell);
 }
 
 // ########## //
@@ -134,7 +147,7 @@ int main() {
 	while (1) {
 		struct cmdline *l;
 		int i;
-		char *prompt = "ensishell>";
+		char *prompt = "\nensishell>";
 
 		l = readcmd(prompt);
 
@@ -172,7 +185,7 @@ int main() {
 		}
 
 		// Affiche chaque commande
-		for (i = 0; l->seq[i] != 0; i++) {
+		for (i = 0; l->seq[i]; i++) {
 			char** cmd = l->seq[i];
 			printf("seq[%d]: ", i);
 			printStringArray(cmd, " ");
@@ -185,88 +198,69 @@ int main() {
 		// FIN DEBUG //
 		///////////////
 
-		// Jobs command
+		// Commande jobs
 		if (strcmp(l->seq[0][0], "jobs") == 0) {
 			print(jobs);
 			continue;
 		}
 
-		// Input & Output
-		int stdinFd = dup(0);
-		int stdoutFd = dup(1);
-		int inFd = stdinFd;
-		int outFd = stdoutFd;
-		if (l->in != NULL) {
+		int pipefd[2];
+		int inFd = 0;
+		int outFd = 0;
+		int res;
+
+		if (l->in) {
 			inFd = open(l->in, O_RDONLY);
 			if (inFd == -1) {
-				printf("Failed to open file in read mode: %s\n", l->in);
+				printf("Failed to open file '%s' in read mode\n", l->in);
 				continue;
 			}
-			dup2(inFd, 0);
 		}
-		if (l->out != NULL) {
+
+		if (l->out) {
 			outFd = open(l->out, O_WRONLY|O_CREAT, S_IRWXU);
 			if (outFd == -1) {
-				printf("Failed to open/create file in write mode: %s\n", l->out);
+				printf("Failed to open/create file '%s' in write mode\n", l->out);
 				continue;
 			}
-			dup2(outFd, 1);
 		}
 
-		int pipefd[2];
-		if (pipe(pipefd) == -1) {
-			perror("pipe failed");
-			exit(EXIT_FAILURE);
-		}
-
-		int res = fork();
-		if (res == -1) {
-			perror("fork failed");
-			exit(EXIT_FAILURE);
-		} else if (res == 0) {
-			for (i = 0; l->seq[i] != NULL; i++) {
-				if (l->seq[i + 1] == NULL) {
-					// Dans la dernière commande
-					
-					dup2(pipefd[0], 0);
-					close(pipefd[0]);
+		for (i = 0; l->seq[i]; i++) {
+			if (pipe(pipefd) == -1) {
+				perror("pipe failed");
+				exit(EXIT_FAILURE);
+			}
+			res = fork();
+			if (res == -1) {
+				perror("fork failed");
+				exit(EXIT_FAILURE);
+			} else if (res == 0) {
+				// Branchement de l'entrée précédente (éventuellment
+				// l'entrée standard) sur l'entrée du processus
+				dup2(inFd, 0);
+				if (l->seq[i + 1]) {
+					// Pas la dernière commande, on branche la sortie
+					// pour la récupérer dans l'entrée suivante
+					dup2(pipefd[1], 1);
+				} else if (outFd) {
+					// Dernière commande, on branche sur la sortie out
 					dup2(outFd, 1);
-					close(outFd);
-				} else {
-					res = fork();
-					if (res == -1) {
-						perror("fork failed");
-						exit(EXIT_FAILURE);
-					} else if (res == 0) {
-						// Fils
-						continue;
-					} else {
-						// Père
-						dup2(1, pipefd[1]);
-					}
 				}
+				close(pipefd[0]);
 				execvp(l->seq[i][0], l->seq[i]);
+				perror("execvp failed");
+				exit(EXIT_FAILURE);
+			} else {
+				inFd = pipefd[0];
+				close(pipefd[1]);
 			}
 		}
 
-		if (inFd != stdinFd) {
-			close(inFd);
-			dup2(stdinFd, 0);
-			close(stdinFd);
-		}
-		if (outFd != stdoutFd) {
-			close(outFd);
-			dup2(stdoutFd, 1);
-			close(stdoutFd);
-		}
-
-		// Dans le père
 		if (!l->bg) {
-			waitpid((pid_t)res, NULL, 0);
+			waitpid(res, NULL, 0);
 		} else {
-			add(jobs, res, copyStringArray(l->seq[0]));
+			add(jobs, res, copyCommandsAsStringArray(l->seq));
 		}
-		printf("\n");
 	}
 }
 
