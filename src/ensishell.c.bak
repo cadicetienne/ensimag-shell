@@ -213,53 +213,84 @@ int main() {
 			dup2(outFd, 1);
 		}
 
-		int pipefd[2];
+		int pipefd[2] = {inFd, outFd};
 		if (pipe(pipefd) == -1) {
 			perror("pipe failed");
 			exit(EXIT_FAILURE);
 		}
 
+		int res;
+		for (i = 0; l->seq[i] != NULL; i++) {
+			if (l->seq[i + 1] == NULL) {
+				// Dans la dernière commande
+				dup2(pipefd[0], 0);
+				close(pipefd[0]);
+				dup2(outFd, 1);
+				close(outFd);
+			} else {
+				res = fork();
+				if (res == -1) {
+					perror("fork failed");
+					exit(EXIT_FAILURE);
+				} else if (res == 0) {
+
+				} else if (i == 0) {
+					break;
+				} else {
+					// Dans la commande i
+				}
+			}
+			execvp(l->seq[i][0], l->seq[i]);
+		}
+/*
+		// Fork
+		int pipefd[2];
+		if (pipe(pipefd) == -1) {
+			perror("pipe failed: ");
+			exit(EXIT_FAILURE);
+		}
 		int res = fork();
 		if (res == -1) {
-			perror("fork failed");
+			perror("fork failed: ");
 			exit(EXIT_FAILURE);
-		} else if (res == 0) {
-			for (i = 0; l->seq[i] != NULL; i++) {
-				if (l->seq[i + 1] == NULL) {
-					// Dans la dernière commande
-					
-					dup2(pipefd[0], 0);
-					close(pipefd[0]);
-					dup2(outFd, 1);
-					close(outFd);
-				} else {
-					res = fork();
-					if (res == -1) {
-						perror("fork failed");
-						exit(EXIT_FAILURE);
-					} else if (res == 0) {
-						// Fils
-						continue;
-					} else {
-						// Père
-						dup2(1, pipefd[1]);
-					}
-				}
-				execvp(l->seq[i][0], l->seq[i]);
+		} else if (res == 0) { // Dans le fils
+			dup2(pipefd[1], 1);
+			// Pipe
+			close(pipefd[0]); close(pipefd[1]);
+
+			// Appel d'execvp
+			execvp(l->seq[0][0], l->seq[0]);
+
+			// Code appelé uniquement si execvp retourne
+			// == si execvp échoue
+			perror("execvp failed: ");
+			exit(EXIT_FAILURE);
+		}
+
+		int res2 = -42;
+		if (l->seq[1] != NULL) {
+			res2 = fork();
+			if (res2 == 0) {
+				dup2(pipefd[0], 0);
+				close(pipefd[1]); close(pipefd[0]);
+				execvp(l->seq[1][0], l->seq[1]);
+				perror("execvp failed: ");
+				exit(EXIT_FAILURE);
 			}
 		}
 
+		close(pipefd[0]); close(pipefd[1]);
 		if (inFd != stdinFd) {
-			close(inFd);
 			dup2(stdinFd, 0);
 			close(stdinFd);
+			close(inFd);
 		}
 		if (outFd != stdoutFd) {
-			close(outFd);
 			dup2(stdoutFd, 1);
 			close(stdoutFd);
+			close(outFd);
 		}
-
+*/
 		// Dans le père
 		if (!l->bg) {
 			waitpid((pid_t)res, NULL, 0);
