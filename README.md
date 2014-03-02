@@ -23,5 +23,7 @@ cmake ..
 make
 make test
 
-
-
+TODO
+====
+* Entree à une seule commande -> hang
+* Le reste
