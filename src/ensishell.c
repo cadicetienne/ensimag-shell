@@ -10,10 +10,12 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <wordexp.h>
 #include <string.h>
 
 #include "variante.h"
 #include "readcmd.h"
+#include "string.h"
 
 #ifndef VARIANTE
 #error "Variante non défini !!"
@@ -31,6 +33,74 @@ typedef struct process_cell {
 /**
  * Imprime un tableau de chaines de caractères
  */
+
+int getNbArgs(char ** stringArray) {
+	int i = 0;
+	while (stringArray[i]) {
+		i++;
+	}
+	return i;
+}
+
+/**
+ * Transforme le tableau d'arguments passés en paramètres
+ * pour extraire les expressions régulières. Le tableau
+ * est finalement modifié.
+ */
+void convertRegexp(char *** stringArray) {
+	wordexp_t p;
+	char **w;
+	int j;
+	int size = getNbArgs(*stringArray);
+	char ** finalArgs;
+	int totalSize = 0;
+	char *** args = malloc((size + 1) * sizeof(char**));
+	
+	int i = 0;
+
+	// On stocke d'abord chaque élément de résultat dans un tableau
+	// intermédiaire
+	while ((*stringArray)[i]) {
+		wordexp((*stringArray)[i], &p, 0);
+		w = p.we_wordv;
+	
+		args[i] = malloc((p.we_wordc + 1) * sizeof(char*));
+		totalSize += p.we_wordc;
+		
+		for (j = 0 ; j < p.we_wordc ; j++) {
+			args[i][j] = malloc(strlen(w[j]) * sizeof(char));
+			strcpy(args[i][j], w[j]);
+		}
+		args[i][j] = NULL;
+		i++;
+	}
+	args[size] = NULL;
+	finalArgs = malloc((totalSize + 1)* sizeof(char**));
+	finalArgs[totalSize] = NULL;
+	i = 0;
+	int curr = 0;
+
+	//On remplit ensuite le tableau final	
+	while (args[i] && curr < totalSize){
+		j = 0;
+		while (args[i][j] != NULL && curr < totalSize) {
+			finalArgs[curr] = malloc(strlen(args[i][j]) * sizeof(char));
+			strcpy(finalArgs[curr], args[i][j]);
+			j++;
+			curr++;
+		}
+		i++;
+	}
+	// On libère la mémoire
+	char ** tmp = *stringArray;
+	free(tmp);
+
+	// On remplace la valeur pointée par le nouveau tableau
+	*stringArray = finalArgs;
+	free(args);
+	
+}
+
 void printStringArray(char** stringArray, char* separator) {
 	if (!stringArray[0]) {
 		printf("Empty array");
@@ -43,6 +113,7 @@ void printStringArray(char** stringArray, char* separator) {
 		}
 	}
 }
+
 
 /*
  * Copie l'ensemble des commandes comme un seul tableau de chaines
@@ -171,7 +242,7 @@ int main() {
 		///////////
 		// DEBUG //
 		///////////
-
+		/*
 		if (l->in) {
 			printf("in: %s\n", l->in);
 		}
@@ -186,6 +257,7 @@ int main() {
 
 		// Affiche chaque commande
 		for (i = 0; l->seq[i]; i++) {
+			convertRegexp(&(l->seq[i]));	
 			char** cmd = l->seq[i];
 			printf("seq[%d]: ", i);
 			printStringArray(cmd, " ");
@@ -193,7 +265,7 @@ int main() {
 		}
 
 		printf("\n");
-
+		*/
 		///////////////
 		// FIN DEBUG //
 		///////////////
